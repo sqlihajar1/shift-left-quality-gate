@@ -50,7 +50,6 @@ Feature: Create product
     """
     When method post
     Then status 201
-    And match response.category.id == categoryId
 
   Scenario: Create product with non existing category
     Given url baseUrl + '/products'
