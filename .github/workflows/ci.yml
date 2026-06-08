@@ -23,5 +23,14 @@ jobs:
       - name: Build Maven project
         run: mvn clean compile
 
+      # lancer Spring Boot
+      - name: Start Spring Boot app
+        run: mvn spring-boot:run &
+
+      # attendre que le serveur démarre
+      - name: Wait for API startup
+        run: sleep 20
+
+      # lancer tests
       - name: Run tests (JUnit + Karate)
         run: mvn test
