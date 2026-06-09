@@ -43,14 +43,15 @@ jobs:
           echo "API failed to start"
           exit 1
 
-      # 🧪 ÉTAPE 5 — tests + JaCoCo
+      # 🧪 TESTS + JACOCO
       - name: Run tests (JUnit + Karate + Coverage)
         run: mvn clean test
 
-      # 📊 ÉTAPE 3 + SONAR ANALYSIS
+      # 📊 SONARQUBE ANALYSIS (FIXED)
       - name: SonarQube Analysis
-        run: mvn verify sonar:sonar \
-          -Dsonar.projectKey=shift-left-quality-gate \
-          -Dsonar.host.url=http://localhost:9000 \
-          -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
-          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+        run: |
+          mvn -B verify sonar:sonar \
+            -Dsonar.projectKey=shift-left-quality-gate \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
