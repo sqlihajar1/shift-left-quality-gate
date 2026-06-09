@@ -1,4 +1,4 @@
-name: CI Shift-Left Pipeline (Minimal)
+name: CI Shift-Left Pipeline
 
 on:
   push:
@@ -23,28 +23,25 @@ jobs:
       - name: Build Maven project
         run: mvn clean compile
 
-      # lancer Spring Boot
       - name: Start Spring Boot app
-        run: mvn spring-boot:run &
+        run: mvn spring-boot:run > app.log 2>&1 &
 
-      # attendre que le serveur démarre (FIXED)
-      - name: Wait for API startup
+      - name: Show logs (debug)
+        run: sleep 10 && cat app.log || true
+
+      - name: Wait for API health check
         run: |
           echo "Waiting for API..."
-
           for i in {1..30}; do
-            if curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
-              echo "API is UP!"
+            if curl -s http://localhost:8080/actuator/health | grep UP; then
+              echo "API is UP"
               exit 0
             fi
-
             echo "Not ready yet... attempt $i"
             sleep 2
           done
-
           echo "API failed to start"
           exit 1
 
-      # lancer tests
       - name: Run tests (JUnit + Karate)
         run: mvn test
