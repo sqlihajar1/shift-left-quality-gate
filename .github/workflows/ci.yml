@@ -27,9 +27,23 @@ jobs:
       - name: Start Spring Boot app
         run: mvn spring-boot:run &
 
-      # attendre que le serveur démarre
+      # attendre que le serveur démarre (FIXED)
       - name: Wait for API startup
-        run: sleep 20
+        run: |
+          echo "Waiting for API..."
+
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/actuator/health | grep '"status":"UP"' > /dev/null; then
+              echo "API is UP!"
+              exit 0
+            fi
+
+            echo "Not ready yet... attempt $i"
+            sleep 2
+          done
+
+          echo "API failed to start"
+          exit 1
 
       # lancer tests
       - name: Run tests (JUnit + Karate)
