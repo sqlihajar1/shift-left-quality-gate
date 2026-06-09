@@ -25,6 +25,6 @@ jobs:
       - name: Build project
         run: mvn clean compile
 
-      # 👉 IMPORTANT : Spring Boot + tests ensemble
-      - name: Run tests (JUnit + Karate)
+      # 👉 IMPORTANT : lancer tests SANS spring-boot:run
+      - name: Run unit + integration tests
         run: mvn clean test
