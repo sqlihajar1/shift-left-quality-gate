@@ -165,7 +165,34 @@ jobs:
             -Dsonar.token=${{ env.SONAR_TOKEN }} \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-      # ── 6. QUALITY GATE CHECK ───────────────────────────────
+      # ── 6. DEBUG ─────────────────────────────────────────────
+      - name: Debug SonarQube status
+        run: |
+          echo "=== System Status ==="
+          curl -s -u "admin:${{ env.SONAR_PASS }}" \
+            "http://localhost:9000/api/system/status"
+
+          echo ""
+          echo "=== Projects list ==="
+          curl -s -u "admin:${{ env.SONAR_PASS }}" \
+            "http://localhost:9000/api/projects/search"
+
+          echo ""
+          echo "=== Quality Gates list ==="
+          curl -s -u "admin:${{ env.SONAR_PASS }}" \
+            "http://localhost:9000/api/qualitygates/list"
+
+          echo ""
+          echo "=== Project Quality Gate Status ==="
+          curl -s -u "admin:${{ env.SONAR_PASS }}" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate"
+
+          echo ""
+          echo "=== CE Tasks (analysis tasks) ==="
+          curl -s -u "admin:${{ env.SONAR_PASS }}" \
+            "http://localhost:9000/api/ce/activity?ps=5"
+
+      # ── 7. QUALITY GATE CHECK ───────────────────────────────
       - name: Check Quality Gate result
         run: |
           echo "Waiting for analysis to be processed..."
