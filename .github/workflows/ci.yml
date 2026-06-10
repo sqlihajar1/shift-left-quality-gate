@@ -82,13 +82,15 @@ jobs:
             "http://localhost:9000/api/qualitygates/create" \
             -d "name=ShiftLeftGate"
 
-          # Récupérer l'ID du gate
+          # Récupérer l'ID du gate (uuid dans les nouvelles versions)
           GATE_ID=$(curl -s -u admin:admin \
             "http://localhost:9000/api/qualitygates/list" | \
             python3 -c "
           import sys, json
-          gates = json.load(sys.stdin)['qualitygates']
-          print(next(g['id'] for g in gates if g['name'] == 'ShiftLeftGate'))
+          data = json.load(sys.stdin)
+          gates = data['qualitygates']
+          gate = next(g for g in gates if g['name'] == 'ShiftLeftGate')
+          print(gate.get('uuid') or gate.get('id'))
           ")
           echo "Gate ID: $GATE_ID"
           echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
@@ -123,7 +125,6 @@ jobs:
             -Dsonar.projectKey=shift-left-quality-gate \
             -Dsonar.projectName="Shift-Left Quality Gate" \
             -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.token=admin \
             -Dsonar.login=admin \
             -Dsonar.password=admin \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
