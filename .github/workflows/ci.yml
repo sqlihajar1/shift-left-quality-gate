@@ -17,7 +17,7 @@ jobs:
         options: >-
           --health-cmd="curl -s http://localhost:9000/api/system/status | grep -q UP"
           --health-interval=15s
-          --health-timeout=10s
+          --health-timeout:10s
           --health-retries=10
 
     steps:
@@ -79,12 +79,12 @@ jobs:
         run: |
           curl -s -u admin:admin -X POST \
             "http://localhost:9000/api/users/change_password" \
-            -d "login=admin&previousPassword=admin&password=HM.chanel%40.3726%3D"
+            -d "login=admin&previousPassword=admin&password=${{ secrets.SONAR_PASSWORD }}"
           echo "Password updated"
 
       - name: Generate SonarQube token
         run: |
-          TOKEN=$(curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          TOKEN=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/user_tokens/generate" \
             -d "name=ci-token" | \
             python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
@@ -93,11 +93,11 @@ jobs:
 
       - name: Create Quality Gate via API
         run: |
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/create" \
             -d "name=ShiftLeftGate"
 
-          GATE_ID=$(curl -s -u "admin:HM.chanel@.3726=" \
+          GATE_ID=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" \
             "http://localhost:9000/api/qualitygates/list" | \
             python3 -c "
           import sys, json
@@ -109,27 +109,34 @@ jobs:
           echo "Gate ID: $GATE_ID"
           echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
 
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=coverage&op=LT&error=80"
 
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=security_hotspots_reviewed&op=LT&error=80"
 
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=duplicated_lines_density&op=GT&error=3"
 
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=blocker_violations&op=GT&error=0"
 
       - name: Set Quality Gate as default
         run: |
-          curl -s -u "admin:HM.chanel@.3726=" -X POST \
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
             "http://localhost:9000/api/qualitygates/set_as_default" \
             -d "id=$GATE_ID"
+
+      - name: Link Quality Gate to project
+        run: |
+          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+            "http://localhost:9000/api/qualitygates/select" \
+            -d "projectKey=shift-left-quality-gate&gateId=$GATE_ID"
+          echo "Quality Gate linked to project"
 
       # ── 5. ANALYSE SONARQUBE ────────────────────────────────
       - name: Run SonarQube analysis
@@ -144,34 +151,45 @@ jobs:
       # ── 6. QUALITY GATE CHECK ───────────────────────────────
       - name: Check Quality Gate result
         run: |
-          echo "Waiting for SonarQube to process analysis..."
-          sleep 15
+          echo "Waiting for analysis to be processed..."
 
-          STATUS=$(curl -s -u "admin:HM.chanel@.3726=" \
-            "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate" | \
-            python3 -c "
+          for i in {1..20}; do
+            RESPONSE=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" \
+              "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate")
+
+            STATUS=$(echo "$RESPONSE" | python3 -c "
           import sys, json
           result = json.load(sys.stdin)
-          status = result['projectStatus']['status']
-          print(status)
-          ")
+          print(result['projectStatus']['status'])
+          " 2>/dev/null || echo "NONE")
 
-          echo "======================================"
-          echo "Quality Gate Status : $STATUS"
-          echo "======================================"
+            echo "Attempt $i — Status: $STATUS"
 
-          if [ "$STATUS" != "OK" ]; then
-            echo "Quality Gate FAILED — pipeline bloqué "
-            curl -s -u "admin:HM.chanel@.3726=" \
-              "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate" | \
-              python3 -c "
+            if [ "$STATUS" = "NONE" ] || [ "$STATUS" = "" ]; then
+              echo "Project not yet available, waiting..."
+              sleep 10
+              continue
+            fi
+
+            echo "======================================"
+            echo "Quality Gate Status : $STATUS"
+            echo "======================================"
+
+            if [ "$STATUS" != "OK" ]; then
+              echo "Quality Gate FAILED — pipeline bloqué "
+              echo "$RESPONSE" | python3 -c "
           import sys, json
           conditions = json.load(sys.stdin)['projectStatus']['conditions']
           for c in conditions:
               if c['status'] == 'ERROR':
                   print(f'   {c[\"metricKey\"]} : {c.get(\"actualValue\",\"?\")} (seuil: {c[\"errorThreshold\"]})')
           "
-            exit 1
-          else
-            echo "Quality Gate PASSED  — déploiement autorisé"
-          fi
+              exit 1
+            else
+              echo "Quality Gate PASSED  — déploiement autorisé"
+              exit 0
+            fi
+          done
+
+          echo "Timeout — impossible de récupérer le statut"
+          exit 1
