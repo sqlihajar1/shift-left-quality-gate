@@ -75,29 +75,32 @@ jobs:
           echo "SonarQube failed to start"
           exit 1
 
-      - name: Configure SonarQube admin password
+      - name: Configure SonarQube admin password and generate token
         run: |
-          curl -s -u admin:admin -X POST \
+          # Changer le mot de passe admin
+          CHANGE_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u admin:admin -X POST \
             "http://localhost:9000/api/users/change_password" \
-            -d "login=admin&previousPassword=admin&password=${{ secrets.SONAR_PASSWORD }}"
-          echo "Password updated"
+            -d "login=admin&previousPassword=admin&password=Admin1234!")
+          echo "Password change status: $CHANGE_RESULT"
 
-      - name: Generate SonarQube token
-        run: |
-          TOKEN=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          # Générer le token
+          TOKEN_RESPONSE=$(curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/user_tokens/generate" \
-            -d "name=ci-token" | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+            -d "name=ci-token")
+          echo "Token response: $TOKEN_RESPONSE"
+
+          TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
           echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
-          echo "Token generated"
+          echo "Token generated successfully"
 
       - name: Create Quality Gate via API
         run: |
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/create" \
             -d "name=ShiftLeftGate"
 
-          GATE_ID=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" \
+          GATE_ID=$(curl -s -u "admin:Admin1234!" \
             "http://localhost:9000/api/qualitygates/list" | \
             python3 -c "
           import sys, json
@@ -109,31 +112,31 @@ jobs:
           echo "Gate ID: $GATE_ID"
           echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
 
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=coverage&op=LT&error=80"
 
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=security_hotspots_reviewed&op=LT&error=80"
 
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=duplicated_lines_density&op=GT&error=3"
 
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=blocker_violations&op=GT&error=0"
 
       - name: Set Quality Gate as default
         run: |
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/set_as_default" \
             -d "id=$GATE_ID"
 
       - name: Link Quality Gate to project
         run: |
-          curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" -X POST \
+          curl -s -u "admin:Admin1234!" -X POST \
             "http://localhost:9000/api/qualitygates/select" \
             -d "projectKey=shift-left-quality-gate&gateId=$GATE_ID"
           echo "Quality Gate linked to project"
@@ -154,7 +157,7 @@ jobs:
           echo "Waiting for analysis to be processed..."
 
           for i in {1..20}; do
-            RESPONSE=$(curl -s -u "admin:${{ secrets.SONAR_PASSWORD }}" \
+            RESPONSE=$(curl -s -u "admin:Admin1234!" \
               "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate")
 
             STATUS=$(echo "$RESPONSE" | python3 -c "
