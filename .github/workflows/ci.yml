@@ -75,15 +75,29 @@ jobs:
           echo "SonarQube failed to start"
           exit 1
 
+      - name: Configure SonarQube admin password
+        run: |
+          curl -s -u admin:admin -X POST \
+            "http://localhost:9000/api/users/change_password" \
+            -d "login=admin&previousPassword=admin&password=HM.chanel%40.3726%3D"
+          echo "Password updated"
+
+      - name: Generate SonarQube token
+        run: |
+          TOKEN=$(curl -s -u "admin:HM.chanel@.3726=" -X POST \
+            "http://localhost:9000/api/user_tokens/generate" \
+            -d "name=ci-token" | \
+            python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+          echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "Token generated"
+
       - name: Create Quality Gate via API
         run: |
-          # Créer le gate
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/create" \
             -d "name=ShiftLeftGate"
 
-          # Récupérer l'ID du gate (uuid dans les nouvelles versions)
-          GATE_ID=$(curl -s -u admin:admin \
+          GATE_ID=$(curl -s -u "admin:HM.chanel@.3726=" \
             "http://localhost:9000/api/qualitygates/list" | \
             python3 -c "
           import sys, json
@@ -95,26 +109,25 @@ jobs:
           echo "Gate ID: $GATE_ID"
           echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
 
-          # Ajouter les conditions
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=coverage&op=LT&error=80"
 
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=security_hotspots_reviewed&op=LT&error=80"
 
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=duplicated_lines_density&op=GT&error=3"
 
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=blocker_violations&op=GT&error=0"
 
       - name: Set Quality Gate as default
         run: |
-          curl -s -u admin:admin -X POST \
+          curl -s -u "admin:HM.chanel@.3726=" -X POST \
             "http://localhost:9000/api/qualitygates/set_as_default" \
             -d "id=$GATE_ID"
 
@@ -125,8 +138,7 @@ jobs:
             -Dsonar.projectKey=shift-left-quality-gate \
             -Dsonar.projectName="Shift-Left Quality Gate" \
             -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=admin \
-            -Dsonar.password=admin \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
       # ── 6. QUALITY GATE CHECK ───────────────────────────────
@@ -135,7 +147,7 @@ jobs:
           echo "Waiting for SonarQube to process analysis..."
           sleep 15
 
-          STATUS=$(curl -s -u admin:admin \
+          STATUS=$(curl -s -u "admin:HM.chanel@.3726=" \
             "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate" | \
             python3 -c "
           import sys, json
@@ -150,8 +162,7 @@ jobs:
 
           if [ "$STATUS" != "OK" ]; then
             echo "Quality Gate FAILED — pipeline bloqué "
-            echo "Raisons :"
-            curl -s -u admin:admin \
+            curl -s -u "admin:HM.chanel@.3726=" \
               "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate" | \
               python3 -c "
           import sys, json
