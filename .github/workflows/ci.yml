@@ -75,46 +75,23 @@ jobs:
           echo "SonarQube failed to start"
           exit 1
 
-      - name: Configure SonarQube admin password and generate token
+      - name: Generate SonarQube token
         run: |
-          sleep 5
-
-          # Tenter de changer le mot de passe
-          CHANGE_RESULT=$(curl -s -w "\n%{http_code}" \
-            -u admin:admin -X POST \
-            "http://localhost:9000/api/users/change_password" \
-            -d "login=admin&previousPassword=admin&password=Admin%401234%21Sonar")
-          echo "Password change response: $CHANGE_RESULT"
-
-          HTTP_CODE=$(echo "$CHANGE_RESULT" | tail -n1)
-          echo "HTTP Status: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" != "204" ] && [ "$HTTP_CODE" != "200" ]; then
-            echo "Password change failed, using admin:admin directly..."
-            TOKEN_RESPONSE=$(curl -s -u "admin:admin" -X POST \
-              "http://localhost:9000/api/user_tokens/generate" \
-              -d "name=ci-token")
-            echo "SONAR_PASS=admin" >> $GITHUB_ENV
-          else
-            TOKEN_RESPONSE=$(curl -s -u "admin:Admin@1234!Sonar" -X POST \
-              "http://localhost:9000/api/user_tokens/generate" \
-              -d "name=ci-token")
-            echo "SONAR_PASS=Admin@1234!Sonar" >> $GITHUB_ENV
-          fi
-
+          TOKEN_RESPONSE=$(curl -s -u "admin:admin" -X POST \
+            "http://localhost:9000/api/user_tokens/generate" \
+            -d "name=ci-token")
           echo "Token response: $TOKEN_RESPONSE"
-
           TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
           echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
           echo "Token generated successfully"
 
       - name: Create Quality Gate via API
         run: |
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/create" \
             -d "name=ShiftLeftGate"
 
-          GATE_ID=$(curl -s -u "admin:${{ env.SONAR_PASS }}" \
+          GATE_ID=$(curl -s -u "admin:admin" \
             "http://localhost:9000/api/qualitygates/list" | \
             python3 -c "
           import sys, json
@@ -126,34 +103,32 @@ jobs:
           echo "Gate ID: $GATE_ID"
           echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
 
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=coverage&op=LT&error=80"
 
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=security_hotspots_reviewed&op=LT&error=80"
 
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=duplicated_lines_density&op=GT&error=3"
 
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/create_condition" \
             -d "gateId=$GATE_ID&metric=blocker_violations&op=GT&error=0"
 
-      - name: Set Quality Gate as default
+      - name: Set Quality Gate as default and link to project
         run: |
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/set_as_default" \
             -d "id=$GATE_ID"
 
-      - name: Link Quality Gate to project
-        run: |
-          curl -s -u "admin:${{ env.SONAR_PASS }}" -X POST \
+          curl -s -u "admin:admin" -X POST \
             "http://localhost:9000/api/qualitygates/select" \
             -d "projectKey=shift-left-quality-gate&gateId=$GATE_ID"
-          echo "Quality Gate linked to project"
+          echo "Quality Gate set as default and linked to project"
 
       # ── 5. ANALYSE SONARQUBE ────────────────────────────────
       - name: Run SonarQube analysis
@@ -165,75 +140,40 @@ jobs:
             -Dsonar.token=${{ env.SONAR_TOKEN }} \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-      # ── 6. DEBUG ─────────────────────────────────────────────
-      - name: Debug SonarQube status
-        run: |
-          echo "=== System Status ==="
-          curl -s -u "admin:${{ env.SONAR_PASS }}" \
-            "http://localhost:9000/api/system/status"
-
-          echo ""
-          echo "=== Projects list ==="
-          curl -s -u "admin:${{ env.SONAR_PASS }}" \
-            "http://localhost:9000/api/projects/search"
-
-          echo ""
-          echo "=== Quality Gates list ==="
-          curl -s -u "admin:${{ env.SONAR_PASS }}" \
-            "http://localhost:9000/api/qualitygates/list"
-
-          echo ""
-          echo "=== Project Quality Gate Status ==="
-          curl -s -u "admin:${{ env.SONAR_PASS }}" \
-            "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate"
-
-          echo ""
-          echo "=== CE Tasks (analysis tasks) ==="
-          curl -s -u "admin:${{ env.SONAR_PASS }}" \
-            "http://localhost:9000/api/ce/activity?ps=5"
-
-      # ── 7. QUALITY GATE CHECK ───────────────────────────────
+      # ── 6. QUALITY GATE CHECK ───────────────────────────────
       - name: Check Quality Gate result
         run: |
           echo "Waiting for analysis to be processed..."
+          sleep 20
 
-          for i in {1..20}; do
-            RESPONSE=$(curl -s -u "admin:${{ env.SONAR_PASS }}" \
-              "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate")
+          RESPONSE=$(curl -s -u "admin:admin" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate")
+          echo "Raw response: $RESPONSE"
 
-            STATUS=$(echo "$RESPONSE" | python3 -c "
+          STATUS=$(echo "$RESPONSE" | python3 -c "
           import sys, json
           result = json.load(sys.stdin)
           print(result['projectStatus']['status'])
           " 2>/dev/null || echo "NONE")
 
-            echo "Attempt $i — Status: $STATUS"
+          echo "======================================"
+          echo "Quality Gate Status : $STATUS"
+          echo "======================================"
 
-            if [ "$STATUS" = "NONE" ] || [ "$STATUS" = "" ]; then
-              echo "Project not yet available, waiting..."
-              sleep 10
-              continue
-            fi
-
-            echo "======================================"
-            echo "Quality Gate Status : $STATUS"
-            echo "======================================"
-
-            if [ "$STATUS" != "OK" ]; then
-              echo "Quality Gate FAILED — pipeline bloqué "
-              echo "$RESPONSE" | python3 -c "
+          if [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "WARN" ]; then
+            echo "Quality Gate FAILED — pipeline bloqué "
+            echo "$RESPONSE" | python3 -c "
           import sys, json
           conditions = json.load(sys.stdin)['projectStatus']['conditions']
           for c in conditions:
               if c['status'] == 'ERROR':
                   print(f'   {c[\"metricKey\"]} : {c.get(\"actualValue\",\"?\")} (seuil: {c[\"errorThreshold\"]})')
           "
-              exit 1
-            else
-              echo "Quality Gate PASSED  — déploiement autorisé"
-              exit 0
-            fi
-          done
-
-          echo "Timeout — impossible de récupérer le statut"
-          exit 1
+            exit 1
+          elif [ "$STATUS" = "OK" ]; then
+            echo "Quality Gate PASSED  — déploiement autorisé"
+            exit 0
+          else
+            echo "Status inconnu: $STATUS — on bloque par précaution "
+            exit 1
+          fi
