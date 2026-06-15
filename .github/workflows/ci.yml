@@ -9,17 +9,6 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
 
-    services:
-      sonarqube:
-        image: sonarqube:community
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd="curl -s http://localhost:9000/api/system/status | grep -q UP"
-          --health-interval=15s
-          --health-timeout=10s
-          --health-retries=10
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,14 +22,15 @@ jobs:
           java-version: 17
           cache: maven
 
-      # ── 1. BUILD ────────────────────────────────────────────
+      # Build du projet
       - name: Build Maven project
         run: mvn clean compile
 
-      # ── 2. SPRING BOOT ──────────────────────────────────────
+      # Démarrage de l'application Spring Boot
       - name: Start Spring Boot app
         run: mvn spring-boot:run > app.log 2>&1 &
 
+      # Attendre que l'API soit disponible
       - name: Wait for API health check
         run: |
           echo "Waiting for API..."
@@ -53,127 +43,16 @@ jobs:
             sleep 2
           done
           echo "API failed to start"
+          cat app.log
           exit 1
 
-      # ── 3. TESTS ────────────────────────────────────────────
-      - name: Run tests (JUnit + Karate) + JaCoCo
-        run: mvn verify
-
-      # ── 4. SONARQUBE SETUP ──────────────────────────────────
-      - name: Wait for SonarQube to be ready
+      # Tests + JaCoCo + Analyse SonarCloud
+      - name: Run tests and SonarCloud analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          echo "Waiting for SonarQube..."
-          for i in {1..30}; do
-            STATUS=$(curl -s http://localhost:9000/api/system/status | grep -o '"status":"[^"]*"' || echo "")
-            echo "Status: $STATUS"
-            if echo "$STATUS" | grep -q "UP"; then
-              echo "SonarQube is UP!"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "SonarQube failed to start"
-          exit 1
-
-      - name: Generate SonarQube token
-        run: |
-          TOKEN_RESPONSE=$(curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/user_tokens/generate" \
-            -d "name=ci-token")
-          echo "Token response: $TOKEN_RESPONSE"
-          TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-          echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
-          echo "Token generated successfully"
-
-      - name: Create Quality Gate via API
-        run: |
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/create" \
-            -d "name=ShiftLeftGate"
-
-          GATE_ID=$(curl -s -u "admin:admin" \
-            "http://localhost:9000/api/qualitygates/list" | \
-            python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          gates = data['qualitygates']
-          gate = next(g for g in gates if g['name'] == 'ShiftLeftGate')
-          print(gate.get('uuid') or gate.get('id'))
-          ")
-          echo "Gate ID: $GATE_ID"
-          echo "GATE_ID=$GATE_ID" >> $GITHUB_ENV
-
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/create_condition" \
-            -d "gateId=$GATE_ID&metric=coverage&op=LT&error=80"
-
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/create_condition" \
-            -d "gateId=$GATE_ID&metric=security_hotspots_reviewed&op=LT&error=80"
-
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/create_condition" \
-            -d "gateId=$GATE_ID&metric=duplicated_lines_density&op=GT&error=3"
-
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/create_condition" \
-            -d "gateId=$GATE_ID&metric=blocker_violations&op=GT&error=0"
-
-      - name: Set Quality Gate as default and link to project
-        run: |
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/set_as_default" \
-            -d "id=$GATE_ID"
-
-          curl -s -u "admin:admin" -X POST \
-            "http://localhost:9000/api/qualitygates/select" \
-            -d "projectKey=shift-left-quality-gate&gateId=$GATE_ID"
-          echo "Quality Gate set as default and linked to project"
-
-      # ── 5. ANALYSE SONARQUBE ────────────────────────────────
-      - name: Run SonarQube analysis
-        run: |
-          mvn sonar:sonar \
+          mvn -B verify \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.projectKey=shift-left-quality-gate \
-            -Dsonar.projectName="Shift-Left Quality Gate" \
-            -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-
-      # ── 6. QUALITY GATE CHECK ───────────────────────────────
-      - name: Check Quality Gate result
-        run: |
-          echo "Waiting for analysis to be processed..."
-          sleep 20
-
-          RESPONSE=$(curl -s -u "admin:admin" \
-            "http://localhost:9000/api/qualitygates/project_status?projectKey=shift-left-quality-gate")
-          echo "Raw response: $RESPONSE"
-
-          STATUS=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
-          result = json.load(sys.stdin)
-          print(result['projectStatus']['status'])
-          " 2>/dev/null || echo "NONE")
-
-          echo "======================================"
-          echo "Quality Gate Status : $STATUS"
-          echo "======================================"
-
-          if [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "WARN" ]; then
-            echo "Quality Gate FAILED — pipeline bloqué "
-            echo "$RESPONSE" | python3 -c "
-          import sys, json
-          conditions = json.load(sys.stdin)['projectStatus']['conditions']
-          for c in conditions:
-              if c['status'] == 'ERROR':
-                  print(f'   {c[\"metricKey\"]} : {c.get(\"actualValue\",\"?\")} (seuil: {c[\"errorThreshold\"]})')
-          "
-            exit 1
-          elif [ "$STATUS" = "OK" ]; then
-            echo "Quality Gate PASSED  — déploiement autorisé"
-            exit 0
-          else
-            echo "Status inconnu: $STATUS — on bloque par précaution "
-            exit 1
-          fi
+            -Dsonar.organization=sqlihajar1
