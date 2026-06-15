@@ -22,16 +22,13 @@ jobs:
           java-version: 17
           cache: maven
 
-      # Build du projet
       - name: Build Maven project
         run: mvn clean compile
 
-      # Démarrage de l'application Spring Boot
       - name: Start Spring Boot app
         run: mvn spring-boot:run > app.log 2>&1 &
 
-      # Attendre que l'API soit disponible
-      - name: Wait for API health check
+      - name: Wait for API startup
         run: |
           echo "Waiting for API..."
           for i in {1..30}; do
@@ -46,13 +43,13 @@ jobs:
           cat app.log
           exit 1
 
-      # Tests + JaCoCo + Analyse SonarCloud
       - name: Run tests and SonarCloud analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           mvn -B verify \
-            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-            -Dsonar.projectKey=shift-left-quality-gate \
-            -Dsonar.organization=sqlihajar1
+          org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -Dsonar.projectKey=shift-left-quality-gate \
+          -Dsonar.organization=sqlihajar1 \
+          -Dsonar.qualitygate.wait=true
