@@ -28,7 +28,7 @@ jobs:
       - name: Start Spring Boot app
         run: mvn spring-boot:run > app.log 2>&1 &
 
-      - name: Wait for API startup
+      - name: Wait for API health check
         run: |
           echo "Waiting for API..."
           for i in {1..30}; do
@@ -43,13 +43,12 @@ jobs:
           cat app.log
           exit 1
 
-      - name: Run tests and SonarCloud analysis
+      - name: Run Tests + SonarCloud Analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          mvn -B verify \
-          org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -Dsonar.projectKey=shift-left-quality-gate \
-          -Dsonar.organization=sqlihajar1 \
-          -Dsonar.qualitygate.wait=true
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=sqlihajar1_shift-left-quality-gate \
+            -Dsonar.organization=sqlihajar1 \
+            -Dsonar.qualitygate.wait=true
