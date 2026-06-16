@@ -25,9 +25,7 @@ jobs:
         run: mvn clean compile
 
       - name: Start Spring Boot app
-        run: |
-          # Maven injecte automatiquement l'agent JaCoCo via argLine (prepare-agent)
-          mvn spring-boot:run > app.log 2>&1 &
+        run: mvn spring-boot:run > app.log 2>&1 &
 
       - name: Wait for API health check
         run: |
@@ -41,6 +39,21 @@ jobs:
             sleep 3
           done
           echo "API failed to start"
+          cat app.log
+          exit 1
+
+      - name: Wait for JaCoCo TCP port 6300
+        run: |
+          echo "Waiting for JaCoCo TCP port..."
+          for i in {1..20}; do
+            if nc -z localhost 6300; then
+              echo "JaCoCo TCP port is open"
+              exit 0
+            fi
+            echo "Port not ready... attempt $i"
+            sleep 2
+          done
+          echo "JaCoCo port never opened"
           cat app.log
           exit 1
 
