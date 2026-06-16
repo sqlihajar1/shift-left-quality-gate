@@ -8,7 +8,6 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,8 +24,17 @@ jobs:
       - name: Build Maven project
         run: mvn clean compile
 
-      - name: Start Spring Boot app
-        run: mvn spring-boot:run > app.log 2>&1 &
+      # Télécharge les dépendances Maven dont jacocoagent.jar
+      - name: Prepare JaCoCo agent
+        run: mvn dependency:resolve jacoco:prepare-agent
+
+      - name: Start Spring Boot app with JaCoCo TCP Agent
+        run: |
+          JACOCO_AGENT=$(find ~/.m2 -name "jacocoagent.jar" | head -1)
+          echo "JaCoCo agent found at: $JACOCO_AGENT"
+          mvn spring-boot:run \
+            -Dspring-boot.run.jvmArguments="-javaagent:${JACOCO_AGENT}=output=tcpserver,address=localhost,port=6300" \
+            > app.log 2>&1 &
 
       - name: Wait for API health check
         run: |
@@ -43,12 +51,15 @@ jobs:
           cat app.log
           exit 1
 
-      - name: Run Tests + SonarCloud Analysis
+      # Failsafe exécute Karate → jacoco:dump récupère la couverture → jacoco:report génère le XML
+      - name: Run Karate Tests + Dump Coverage + SonarCloud
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          mvn -B failsafe:integration-test failsafe:verify jacoco:dump jacoco:report \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.projectKey=sqlihajar1_shift-left-quality-gate \
             -Dsonar.organization=sqlihajar1 \
-            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
