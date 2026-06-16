@@ -24,34 +24,26 @@ jobs:
       - name: Build Maven project
         run: mvn clean compile
 
-      # Télécharge les dépendances Maven dont jacocoagent.jar
-      - name: Prepare JaCoCo agent
-        run: mvn dependency:resolve jacoco:prepare-agent
-
-      - name: Start Spring Boot app with JaCoCo TCP Agent
+      - name: Start Spring Boot app
         run: |
-          JACOCO_AGENT=$(find ~/.m2 -name "jacocoagent.jar" | head -1)
-          echo "JaCoCo agent found at: $JACOCO_AGENT"
-          mvn spring-boot:run \
-            -Dspring-boot.run.jvmArguments="-javaagent:${JACOCO_AGENT}=output=tcpserver,address=localhost,port=6300" \
-            > app.log 2>&1 &
+          # Maven injecte automatiquement l'agent JaCoCo via argLine (prepare-agent)
+          mvn spring-boot:run > app.log 2>&1 &
 
       - name: Wait for API health check
         run: |
           echo "Waiting for API..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8080/actuator/health | grep UP; then
+          for i in {1..40}; do
+            if curl -s http://localhost:8080/actuator/health | grep -q UP; then
               echo "API is UP"
               exit 0
             fi
             echo "Not ready yet... attempt $i"
-            sleep 2
+            sleep 3
           done
           echo "API failed to start"
           cat app.log
           exit 1
 
-      # Failsafe exécute Karate → jacoco:dump récupère la couverture → jacoco:report génère le XML
       - name: Run Karate Tests + Dump Coverage + SonarCloud
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
