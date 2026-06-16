@@ -25,6 +25,8 @@
         <sonar.coverage.jacoco.xmlReportPaths>
             ${project.build.directory}/site/jacoco/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
+        <!-- Valeur vide par défaut — JaCoCo la remplace au build -->
+        <argLine></argLine>
     </properties>
 
     <dependencies>
@@ -72,7 +74,6 @@
     <build>
         <plugins>
 
-            <!-- Lombok annotation processor -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -86,7 +87,6 @@
                 </configuration>
             </plugin>
 
-            <!-- Spring Boot -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -100,21 +100,19 @@
                 </configuration>
             </plugin>
 
-            <!-- SonarCloud -->
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
                 <version>3.10.0.2594</version>
             </plugin>
 
-            <!-- JaCoCo TCP Server -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.11</version>
                 <executions>
 
-                    <!-- 1. Agent en mode TCP Server -->
+                    <!-- 1. Agent TCP Server — propertyName écrase argLine -->
                     <execution>
                         <id>prepare-agent</id>
                         <goals>
@@ -124,6 +122,7 @@
                             <output>tcpserver</output>
                             <address>localhost</address>
                             <port>6300</port>
+                            <propertyName>argLine</propertyName>
                         </configuration>
                     </execution>
 
@@ -159,7 +158,6 @@
                 </executions>
             </plugin>
 
-            <!-- Failsafe — exécute RunnerKarateApiTest en phase integration-test -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -167,6 +165,8 @@
                     <includes>
                         <include>**/RunnerKarateApiTest.java</include>
                     </includes>
+                    <!-- Hérite de argLine injecté par JaCoCo -->
+                    <argLine>${argLine}</argLine>
                 </configuration>
                 <executions>
                     <execution>
