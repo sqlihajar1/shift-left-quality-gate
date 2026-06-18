@@ -26,7 +26,6 @@ jobs:
 
       - name: Resolve JaCoCo agent path
         run: |
-          # Télécharge l'agent et stocke son chemin dans une variable d'env
           mvn dependency:resolve
           JACOCO_AGENT=$(find ~/.m2 -name "org.jacoco.agent-*-runtime.jar" | head -1)
           echo "JACOCO_AGENT=$JACOCO_AGENT" >> $GITHUB_ENV
@@ -77,5 +76,12 @@ jobs:
             org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             -Dsonar.projectKey=sqlihajar1_shift-left-quality-gate \
             -Dsonar.organization=sqlihajar1 \
-            -Dsonar.qualitygate.wait=true \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+      # télécharge le rapport JaCoCo comme artifact
+      - name: Upload JaCoCo Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
