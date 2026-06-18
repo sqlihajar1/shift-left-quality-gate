@@ -2,7 +2,7 @@ name: CI Shift-Left Pipeline
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "develop", "demo-fail" ]
   pull_request:
 
 jobs:
