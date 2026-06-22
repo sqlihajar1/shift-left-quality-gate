@@ -2,6 +2,24 @@ package com.example.ecommerce;
 
 public class DemoCoverage {
 
+    // SECURITY — hardcoded credentials détectés par SonarCloud
+    private static final String PASSWORD = "admin1234";
+    private static final String API_KEY = "sk-prod-abc123xyz456secret";
+    private static final String SECRET = "mySecretPassword123!";
+
+    public boolean authenticate(String input) {
+        return PASSWORD.equals(input);
+    }
+
+    public String getApiKey() {
+        return "Authorization: Bearer " + API_KEY;
+    }
+
+    public String getSecret() {
+        return SECRET;
+    }
+
+    // COVERAGE — méthodes non testées
     public String processOrder(String orderId) {
         if (orderId == null) return "null";
         if (orderId.isEmpty()) return "empty";
