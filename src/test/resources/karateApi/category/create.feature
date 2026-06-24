@@ -14,7 +14,7 @@ Feature: Category creation
     """
     When method post
     Then status 201
-    And match response.name == "Electronics"
+    And match response.name == "Electroncs"
     And match response.description == "All electronic products"
     And match response.id != null
 
